@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <unistd.h> // Para a função sleep()
 
 struct Node {
     int key;
@@ -16,9 +17,11 @@ GLfloat diffuse[] = {0.9, 0.6, 0.3, 1.0};  // Componente difuso do material
 GLfloat specular[] = {1.0, 1.0, 1.0, 1.0};   // Componente especular do material
 GLfloat shininess = 50.0;                      // Exponente de especularidade
 
-
-
-Tree root = NULL;  // Declaração da árvore no escopo global
+Tree root = NULL;           // Declaração da árvore no escopo global
+Tree highlightedNode = NULL; // Nó destacado na busca interativa
+int searchKey = -1;          // Chave da busca interativa
+int searching = 0;           // Estado de busca (0: não buscando, 1: buscando)
+int highlightDuration = 3;   // Duração do destaque em segundos
 
 float translationX = 0.0;
 float translationY = 0.0;
@@ -26,16 +29,30 @@ float translationZ = 0.0;
 float rotationAngle = 0.0;  // Ângulo de rotação em graus
 float scale = 1.0;  // Fator de escala
 
-void drawSphere(double radius, int key) {
+void drawSphere(double radius, int key, int isHighlighted) {
     GLUquadricObj *quadratic;
     quadratic = gluNewQuadric();
     gluQuadricDrawStyle(quadratic, GLU_FILL);
-    gluSphere(quadratic, radius, 32, 32);
 
-    glColor3f(0, 0, 0); // Cor do número (preto)
-    glLineWidth(10.0);
+    if (isHighlighted) {
+        glColor3f(1.0, 0.0, 0.0); // Cor vermelha para o nó destacado
+        glutSolidSphere(radius * 1.2, 32, 32);  // Aumenta ligeiramente o tamanho para destacar
+        glColor3f(1.0, 1.0, 1.0); // Restaura a cor branca para o número
+    } else {
+        glColor3f(0.7, 0.7, 0.7); // Cor cinza para nós não destacados
+        glutSolidSphere(radius, 32, 32);
+    }
+
     glRasterPos3f(-0.05, -0.05, radius + 0.1);
     glutBitmapCharacter(GLUT_BITMAP_9_BY_15, '0' + key);
+}
+
+void update(int value) {
+    if (highlightedNode != NULL) {
+        highlightedNode = NULL;  // Limpa o destaque
+        searching = 0;           // Finaliza o estado de busca
+        glutPostRedisplay();     // Atualiza a tela
+    }
 }
 
 Tree insert(Tree root, int key) {
@@ -86,6 +103,16 @@ Tree removeNode(Tree root, int key) {
     return root;
 }
 
+Tree search(Tree root, int k) {
+    if (root == NULL || root->key == k)
+        return root;
+
+    if (root->key > k)
+        return search(root->left, k);
+    else
+        return search(root->right, k);
+}
+
 void buildTree(int argc, char** argv) {
     for (int i = 1; i < argc; i++) {
         int key = atoi(argv[i]);
@@ -97,15 +124,20 @@ void drawTree(Tree root, double x, double y, double z, double scale) {
     if (root == NULL)
         return;
 
-    // Escolha cores diferentes para os nós
-    GLfloat nodeColor[] = {(GLfloat)rand() / RAND_MAX, (GLfloat)rand() / RAND_MAX, (GLfloat)rand() / RAND_MAX, 1.0};
-    glColor4fv(nodeColor);  // Usando cores aleatórias
+    int isHighlighted = 0;
+
+    // Verifica se o nó atual está destacado
+    if (searching && root->key == searchKey) {
+        isHighlighted = 1;
+    } else if (highlightedNode != NULL && root->key == highlightedNode->key) {
+        isHighlighted = 1;
+    }
 
     // Desenha a esfera representando o nó
     glPushMatrix();
     glTranslatef(x, y, z);
     glScalef(scale, scale, scale);
-    drawSphere(0.2, root->key);
+    drawSphere(0.2, root->key, isHighlighted);
     glPopMatrix();
 
     // Desenha os ramos
@@ -129,7 +161,6 @@ void drawTree(Tree root, double x, double y, double z, double scale) {
         drawTree(root->right, x + 0.5, y - 0.5, z - 0.5, scale);
     }
 }
-
 
 void display() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -176,7 +207,6 @@ void display() {
     glutSwapBuffers();
 }
 
-
 void keyboard(unsigned char key, int x, int y) {
     switch (key) {
         case 'I':
@@ -197,6 +227,14 @@ void keyboard(unsigned char key, int x, int y) {
             glutPostRedisplay();
             break;
         }
+        case 'F':
+        case 'f':
+            printf("Digite a chave para buscar: ");
+            scanf("%d", &searchKey);
+            highlightedNode = search(root, searchKey);
+            searching = 1;
+            glutPostRedisplay();
+            break;
         case '+':
             scale += 0.1;  // Aumenta a escala
             glutPostRedisplay();
@@ -258,6 +296,7 @@ int main(int argc, char** argv) {
     glutDisplayFunc(display);
     glutKeyboardFunc(keyboard);  // Registra a função de teclado
     glClearColor(1.0, 1.0, 1.0, 1.0); // Cor de fundo branca
+    glutTimerFunc(highlightDuration * 1000, update, 0);  // Configura a função de temporizador para remover o destaque
     glutMainLoop();
 
     return 0;
